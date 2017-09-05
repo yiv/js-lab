@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+
+
+</head>
+<script>
+
+
+    arcfour = (function () {
+        "use strict";
+        var swap = function (a, i, j) {
+            var tmp = a[i];
+            a[i] = a[j];
+            a[j] = tmp;
+        };
+
+        var ksa = function (key) {
+            var buf = [];
+            for (var i = 0; i < 256; i++) {
+                buf[i] = i;
+            }
+            var j = 0;
+            for (var i = 0; i < 256; i++) {
+                j = (j + buf[i] + key[i % key.length]) % 256;
+                swap(buf, i, j);
+            }
+            return buf;
+        };
+
+        var prga = function (buf) {
+            var i = 0;
+            var j = 0;
+
+            return function () {
+                i = (i + 1) % 256;
+                j = (j + buf[i]) % 256;
+                swap(buf, i, j);
+                return buf[(buf[i] + buf[j]) % 256];
+            };
+        };
+
+        return function (data, key) {
+            var keybuf = ksa(key);
+            var keygen = prga(keybuf);
+
+            var result = [];
+            for (var i = 0; i < data.length; i++) {
+                result[i] = data[i] ^ keygen();
+            }
+            return result;
+        };
+    })();
+
+    UTF8 = (function () {
+        "use strict";
+        var fromCharCode = function (code) {
+            if (code <= 0x7F) return [code];
+            var tail = [];
+            var hmask = 0x02;
+            while (code > 0x3F) {
+                tail.unshift(0x80 | (0x3F & code));
+                code = code >> 6;
+                hmask = (hmask | 0x01) << 1;
+            }
+            return [hmask << (6 - tail.length) | code].concat(tail);
+        };
+        var toCharCode = function (buf) {
+            var h = buf.shift();
+            if ((0x80 & h) === 0) return h;
+            var code = 0;
+            var shift = 0;
+            var mask = 0x3F;
+            while ((0x80 & (h << (shift + 1))) !== 0) {
+                code = (code << 6) | (0x3F & buf.shift());
+                shift += 1;
+                mask = mask >> 1;
+            }
+            return ((h & mask) << (6 * shift)) | code;
+        };
+
+        return {
+            toBytes: function (text) {
+                var result = [];
+                for (var i = 0; i < text.length; i++) {
+                    var code = text.charCodeAt(i);
+                    result = result.concat(fromCharCode(code));
+                }
+                return result;
+            },
+            toText: function (bytes) {
+                bytes = bytes.slice();
+                var result = "";
+                while (bytes.length > 0) {
+                    var code = toCharCode(bytes);
+                    result += String.fromCharCode(code);
+                }
+                return result;
+            }
+        };
+    })();
+
+
+
+    function POSTRC4(ip, path, data) {
+        var xhr = new XMLHttpRequest();
+        var url = ip + path;
+        xhr.open("POST", url);
+        xhr.setRequestHeader("Content-Type", "text/plain;");
+        xhr.setRequestHeader("Access-Control-Allow-Origin", "*")
+        xhr.responseType = "arraybuffer";
+
+        ['loadstart', 'abort', 'error', 'load', 'loadend', 'timeout'].forEach(function (eventname) {
+            xhr["on" + eventname] = function () {
+                // console.log("Event : " + eventname);
+            };
+        });
+
+        var src = UTF8.toBytes(data);
+        var key = UTF8.toBytes("f63dfeafe6bd2f74fedcf754c89d25ad");
+        var enc = arcfour(src, key);
+
+        var postData = new Uint8Array(enc);
+
+        console.log(postData);
+
+        xhr.send(postData);
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4 && (xhr.status >= 200 && xhr.status < 300)) {
+                var byteArray = new Uint8Array(xhr.response);
+                var response = '';
+                for (var i = 0; i < byteArray.length; i++) {
+                    response += String.fromCharCode(byteArray[i]);
+                }
+                console.log(JSON.parse(RC4(response)))
+            }
+        };
+    }
+    function test() {
+        var str = '{"key":"中"}';
+        POSTRC4("http://frontapi.poker666.in", "/user/v1/setNick", str)
+    }
+
+
+
+</script>
+
+
+<body>
+
+<script>
+    test()
+</script>
+
+
+</body>
+</html>
